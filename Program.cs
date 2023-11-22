@@ -10,13 +10,15 @@ using Newtonsoft.Json;
 
 using InstagramComments.Settings;
 using System.Reflection;
+using InstagramApiSharp.Classes.Android.DeviceInfo;
+using System.Text;
 
 
 namespace InstagramComments
 {
     internal class Program
     {
-        static InstagramServices services = new InstagramServices();        
+        static InstagramServices services = new InstagramServices();
         static async Task Main(string[] args)
         {
             Console.WriteLine("Inicio Sesion.");
@@ -31,8 +33,8 @@ namespace InstagramComments
                 Console.WriteLine($"Usuario fallo en login. Inicializando nuevamente.");
                 services = new InstagramServices();
             }
-            Console.WriteLine("Espera de 20 minutos para siguiente llamado.");
-            Thread.Sleep(TimeSpan.FromMinutes(20));
+            Console.WriteLine("Espera de 10 minutos para siguiente llamado.");
+            Thread.Sleep(TimeSpan.FromMinutes(10));
             await Main(args);
 
         }
@@ -46,50 +48,39 @@ namespace InstagramComments
         internal string nextpageinsta = "";
         internal string useraccount = "";
         internal int count = 0;
+        const string stateFile = "state.bin";
+        private AndroidDevice device = new AndroidDevice();
+        private string sessionstate = "";
+        List<string> Users = new();
 
         // Uso de Visual Stuido User Secrets.
         IConfiguration configuration = new ConfigurationBuilder().AddUserSecrets<InstagramServices>().Build();
         private InstagramSecrets model = new();
         public InstagramServices()
         {
-            
+            GetDevice();
+
+
             model = configuration.GetSection("InstagramSecrets").Get<InstagramSecrets>();
             var user = new UserSessionData
             {
                 UserName = model.Username,
-                Password = model.Password                
+                Password = model.Password
             };
 
             _InstaApi = InstaApiBuilder.CreateBuilder()
                 .SetUser(user)
                 .UseLogger(new DebugLogger(LogLevel.Exceptions))
                 .Build();
-            _InstaApi.SetTimeout(TimeSpan.FromSeconds(90));
-            const string stateFile = "state.bin";
-            try
-            {
-                // load session file if exists
-                if (File.Exists(stateFile))
-                {
-                    Console.WriteLine("Loading state from file");
-                    using (var fs = File.OpenRead(stateFile))
-                    {
-                        _InstaApi.LoadStateDataFromStream(fs);
-                        // in .net core or uwp apps don't use LoadStateDataFromStream
-                        // use this one:
-                        // _instaApi.LoadStateDataFromString(new StreamReader(fs).ReadToEnd());
-                        // you should pass json string as parameter to this function.
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Error en creacion de archivo de mantenimiento de estado {e.Message}");
-            }
+            _InstaApi.SetDevice(this.device);
+
+            LoadSession();
 
             string errormessage = "Login exitoso.";
             if (!_InstaApi.IsUserAuthenticated)
             {
+                _ = _InstaApi.SendRequestsBeforeLoginAsync().Result;
+                Thread.Sleep(5000);
                 // login
                 Console.WriteLine($"Logging in as {user.UserName}");
                 var loginresult = _InstaApi.LoginAsync().Result;
@@ -105,30 +96,16 @@ namespace InstagramComments
                     }
                     Console.WriteLine(errormessage);
                 }
-                return;
+                //return;
+                _ = _InstaApi.SendRequestsAfterLoginAsync().Result;
+                SaveSession();
             }
-
-            // save session in file
-            var state = _InstaApi.GetStateDataAsStream();
-            // in .net core or uwp apps don't use GetStateDataAsStream.
-            // use this one:
-            // var state = _instaApi.GetStateDataAsString();
-            // this returns you session as json string.
-            using (var fileStream = File.Create(stateFile))
-            {
-                state.Seek(0, SeekOrigin.Begin);
-                state.CopyTo(fileStream);
-            }
-
         }
 
         private async Task<List<string>> GetRandomAccounts()
         {
-            List<string> Users = new();
-
-
             //var accounts = configuration.GetSection("Instagram").GetSection("instagramaccounts").Value.ToArray();
-            
+
             int randomaccount = 0;
             //if (String.IsNullOrEmpty(useraccount))
             //{
@@ -143,84 +120,87 @@ namespace InstagramComments
             var pagination = PaginationParameters.MaxPagesToLoad(50);
             try
             {
-                result = await _InstaApi.UserProcessor.GetUserFollowersAsync(model.InstagramAccounts[randomaccount].ToString(), pagination);
-
-                //if (String.IsNullOrEmpty(nextpageinsta) && !useraccount.Equals(accounts[randomaccount]))
-                //{
-                //    result = await _InstaApi.UserProcessor.GetUserFollowersAsync(accounts[randomaccount], pagination);
-                //    nextpageinsta = result.Value.NextMaxId;
-                //    useraccount = accounts[randomaccount];
-                //}
-                //else
-                //{
-                //    result = await _InstaApi.UserProcessor.GetUserFollowersAsync(useraccount, pagination.StartFromMaxId(nextpageinsta));
-                //    nextpageinsta = result.Value.NextMaxId;
-                //    count++;
-                //}
-
-                //if (count == 5)
-                //{
-                //    Console.WriteLine("Reinicio de valores paginacion y cuenta.");
-                //    nextpageinsta = "";
-                //    useraccount = "";
-                //    count = 0;
-                //}
-
-                Console.WriteLine($"Cuenta de instagram a usar: {model.InstagramAccounts[randomaccount]}");
-                if (result.Succeeded)
+                if (!Users.Any())
                 {
-                    int skipusercount = result.Value.Count / 2;
-                    //Users = result.Value.Where(r => r.Pk > useridrand).Select(r => r.UserName).Skip(randskip / 2).Take(2).ToList();
-                    if ((maxpageload % 2) == 0)
-                    {
-                        Console.WriteLine("Descending...");
-                        Users = result.Value.OrderByDescending(r => r.UserName).Where(r => !r.IsPrivate).Select(r => r.UserName).Skip(skipusercount).Take(30).ToList();
-                    }
-                    else
-                    {
-                        Console.WriteLine("Reverse resultados...");
-                        Users = result.Value.Select(r => r.UserName).Reverse().Skip(skipusercount).Take(20).ToList();
+                    result = await _InstaApi.UserProcessor.GetUserFollowersAsync(model.InstagramAccounts[randomaccount].ToString(), pagination);
 
-                    }
-                    //count = Users.Count;
-                    //Console.WriteLine("User search count: " + result.Value.Users?.Count);
-                    //if (result.Value.Users?.Count > 0)
+                    //if (String.IsNullOrEmpty(nextpageinsta) && !useraccount.Equals(accounts[randomaccount]))
                     //{
-                    //    int usercount = 0;
-                    //    do
-                    //    {
-                    //        Users = result.Value.Users.Where(r => r.IsVerified && r.FollowersCount > 20 && r.FollowersCount < 5000 && !r.HasAnonymousProfilePicture).Select(t => t).Take(3);
-
-                    //    } while (usercount < 3);
-
+                    //    result = await _InstaApi.UserProcessor.GetUserFollowersAsync(accounts[randomaccount], pagination);
+                    //    nextpageinsta = result.Value.NextMaxId;
+                    //    useraccount = accounts[randomaccount];
                     //}
-                }
-                else
-                {
-                    if (result.Info.NeedsChallenge)
+                    //else
+                    //{
+                    //    result = await _InstaApi.UserProcessor.GetUserFollowersAsync(useraccount, pagination.StartFromMaxId(nextpageinsta));
+                    //    nextpageinsta = result.Value.NextMaxId;
+                    //    count++;
+                    //}
+
+                    //if (count == 5)
+                    //{
+                    //    Console.WriteLine("Reinicio de valores paginacion y cuenta.");
+                    //    nextpageinsta = "";
+                    //    useraccount = "";
+                    //    count = 0;
+                    //}
+
+                    Console.WriteLine($"Cuenta de instagram a usar: {model.InstagramAccounts[randomaccount]}");
+                    if (result.Succeeded || result.Value != null)
                     {
-                        Console.WriteLine("Requiere challenge para obtener listado de seguidores. Iniciando procedimiento de challenge...");
-                        if (await ChallengeManage())
+                        int skipusercount = result.Value.Count / 2;
+                        //Users = result.Value.Where(r => r.Pk > useridrand).Select(r => r.UserName).Skip(randskip / 2).Take(2).ToList();
+                        if ((maxpageload % 2) == 0)
                         {
-                            await GetRandomAccounts();
+                            Console.WriteLine("Descending...");
+                            Users = result.Value.OrderByDescending(r => r.UserName).Where(r => !r.IsPrivate).Select(r => r.UserName).Skip(skipusercount).Take(20).ToList();
                         }
                         else
                         {
-                            Console.WriteLine("Error en verificacion de codigo. Cerrando sistema.");
-                            throw new NotImplementedException();
+                            Console.WriteLine("Reverse resultados...");
+                            Users = result.Value.Select(r => r.UserName).Reverse().Skip(skipusercount).Take(20).ToList();
+
                         }
+                        //count = Users.Count;
+                        //Console.WriteLine("User search count: " + result.Value.Users?.Count);
+                        //if (result.Value.Users?.Count > 0)
+                        //{
+                        //    int usercount = 0;
+                        //    do
+                        //    {
+                        //        Users = result.Value.Users.Where(r => r.IsVerified && r.FollowersCount > 20 && r.FollowersCount < 5000 && !r.HasAnonymousProfilePicture).Select(t => t).Take(3);
 
+                        //    } while (usercount < 3);
 
+                        //}
                     }
-                    Console.WriteLine("Error while searching users: " + result.Info.Message);
+                    else
+                    {
+                        if (result.Info.NeedsChallenge)
+                        {
+                            Console.WriteLine("Requiere challenge para obtener listado de seguidores. Iniciando procedimiento de challenge...");
+                            if (await ChallengeManage())
+                            {
+                                await GetRandomAccounts();
+                            }
+                            else
+                            {
+                                Console.WriteLine("Error en verificacion de codigo. Cerrando sistema.");
+                                throw new NotImplementedException();
+                            }
+
+
+                        }
+                        Console.WriteLine("Error while searching users: " + result.Info.Message);
+                    }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error: {ex.Message}");
-                nextpageinsta = "";
-                useraccount = "";
-                count = 0;
+                Console.WriteLine($"Error en obtencion de seguidores: {ex.Message}");
+                //nextpageinsta = "";
+                //useraccount = "";
+                //count = 0;
             }
             return Users;
         }
@@ -236,29 +216,46 @@ namespace InstagramComments
             }
             try
             {
+                if (!usernames.Any())
+                {
+                    Console.WriteLine($"No se encontraron usuarios");
+                    return;
+                }
+
                 int contador = usernames.Count;
+                Console.WriteLine($"Cantidad de usuarios: {contador}");
                 for (int i = 0; i < contador; i += 2)
                 {
-                    comment = (i == contador) ? $"@{usernames[i]}, @{usernames[i - 1]}" : $"@{usernames[i]}, @{usernames[i + 1]}";
+                    comment = (i + 1 > contador) ? $"@{usernames[i]}, @{usernames[i - 1]}" : $"@{usernames[i]}, @{usernames[i + 1]}";
 
                     var commentresult = await _InstaApi.CommentProcessor.CommentMediaAsync(model.PostId, comment);
-                    Console.WriteLine($"Mensaje a enviar: {comment} - Resultado: {commentresult.Succeeded}");
+                    Console.WriteLine($"{i} - Mensaje a enviar: {comment} - Resultado: {commentresult.Succeeded}");
                     if (!commentresult.Succeeded)
                     {
                         if (commentresult.Info.Message == "login_required")
                         {
                             Console.WriteLine("Error de sesion. Iniciando proceso de login...");
-                            await Login();
+                            await LoginAsync(true);
                         }
-                        else if (commentresult.Info.Message == "challenge_required") {
+                        else if (commentresult.Info.Message == "challenge_required")
+                        {
                             Console.WriteLine("Error de challenge. Iniciando proceso de challenge...");
                             await ChallengeManage();
+                        }
+                        else if (commentresult.Info.ResponseType == ResponseType.Spam)
+                        {
+                            Console.WriteLine("Envio de mensajes ha sido declarado como spam. Cerrando ciclo.");
+                            return;
                         }
                         else
                         {
                             Console.WriteLine($"Error envio de comentario: {commentresult.Info.Message}");
                         }
                     }
+                    else {
+                        Users.RemoveRange(i, i+1);
+                    }                 
+                    Thread.Sleep(5000);
                 }
 
             }
@@ -284,9 +281,34 @@ namespace InstagramComments
         {
             bool result = false;
             Console.WriteLine("Inicio de Challenge.");
-            var challenge = await _InstaApi.GetChallengeRequireVerifyMethodAsync();            
-            if (challenge.Succeeded || challenge.Info.NeedsChallenge)
+            var challenge = await _InstaApi.GetChallengeRequireVerifyMethodAsync();
+            if (challenge.Succeeded)
             {
+                if (challenge.Value.SubmitPhoneRequired)
+                {
+                    Console.WriteLine("Iniciando proceso de petiicon de codigo por sms...");
+                    var beginphoneverification = await _InstaApi.SubmitPhoneNumberForChallengeRequireAsync(model.PhoneNumber);
+                    if (beginphoneverification.Succeeded)
+                    {
+                        var phonecodeverification = await _InstaApi.RequestVerifyCodeToSMSForChallengeRequireAsync();
+
+                        if (phonecodeverification.Succeeded)
+                        {
+                            Console.WriteLine("Codigo enviado. Revisar telefono para insertar codigo.");
+                            var code = Console.ReadLine();
+                            var codeverification = await _InstaApi.VerifyCodeForChallengeRequireAsync(code);
+                            if (!codeverification.Succeeded)
+                            {
+                                Console.WriteLine($"Error en peticion de codigo de challenge: {JsonConvert.SerializeObject(codeverification.Info.Message)}");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Error en peticion de codigo de challenge: {JsonConvert.SerializeObject(beginphoneverification.Info.Message)}");
+                    }
+                }
+
                 Console.WriteLine("Iniciando proceso de petiicon de codigo por correo...");
                 var requestforcode = await _InstaApi.RequestVerifyCodeToEmailForChallengeRequireAsync();
                 if (requestforcode.Succeeded)
@@ -304,26 +326,20 @@ namespace InstagramComments
                         Console.WriteLine("Codigo aceptando.");
                     }
 
-                }                
+                }
                 else
                 {
-                    Console.WriteLine("Error de envio codigo por correo. Iniciando proceso de petiicon de codigo por sms...");
-                    var phonecodeverification = await _InstaApi.RequestVerifyCodeToSMSForChallengeRequireAsync();
-                    if (phonecodeverification.Succeeded)
-                    {
-                        Console.WriteLine("Codigo enviado. Revisar telefono para insertar codigo.");
-                        var code = Console.ReadLine();
-                        var codeverification = await _InstaApi.VerifyCodeForChallengeRequireAsync(code);
-                        result = codeverification.Succeeded;
 
-                    }
-                    else
-                    {
-                        Console.WriteLine($"Error en peticion de codigo de challenge: {JsonConvert.SerializeObject(requestforcode.Info.Message)}");
-                    }
                 }
 
             }
+            //else if (challenge.Info.NeedsChallenge)
+            //{
+            //    if (challenge.Info.Message.Contains("LoginAsync"))
+            //    {
+                    
+            //    }
+            //}
             else
             {
                 Console.WriteLine($"Error en verificacion de metodo de challenge: {JsonConvert.SerializeObject(challenge.Info)}");
@@ -331,8 +347,8 @@ namespace InstagramComments
             return result;
         }
 
-        internal async Task Login()
-        {
+        internal async Task LoginAsync(bool loginask = false)
+        {            
             model = configuration.GetSection("InstagramSecrets").Get<InstagramSecrets>();
             var user = new UserSessionData
             {
@@ -346,40 +362,26 @@ namespace InstagramComments
                 .SetUser(user)
                 .UseLogger(new DebugLogger(LogLevel.Exceptions))
                 .Build();
-            _InstaApi.SetTimeout(TimeSpan.FromSeconds(90));
-            const string stateFile = "state.bin";
-            try
+            _InstaApi.SetDevice(this.device);
+
+            if (!loginask)
             {
-                // load session file if exists
-                if (File.Exists(stateFile))
-                {
-                    Console.WriteLine("Loading state from file");
-                    using (var fs = File.OpenRead(stateFile))
-                    {
-                        _InstaApi.LoadStateDataFromStream(fs);
-                        // in .net core or uwp apps don't use LoadStateDataFromStream
-                        // use this one:
-                        // _instaApi.LoadStateDataFromString(new StreamReader(fs).ReadToEnd());
-                        // you should pass json string as parameter to this function.
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Error en creacion de archivo de mantenimiento de estado {e.Message}");
-            }
+                LoadSession();
+            }            
 
             string errormessage = "Login exitoso.";
             if (!_InstaApi.IsUserAuthenticated)
             {
+                await _InstaApi.SendRequestsBeforeLoginAsync();
+                Thread.Sleep(5000);
                 // login
                 Console.WriteLine($"Logging in as {user.UserName}");
-                var loginresult = _InstaApi.LoginAsync().Result;
+                var loginresult = await _InstaApi.LoginAsync();
                 if (!loginresult.Succeeded)
                 {
                     if (loginresult.Info.NeedsChallenge)
                     {
-                        _ = ChallengeManage().Result;
+                        _ = await ChallengeManage();
                     }
                     else
                     {
@@ -387,25 +389,117 @@ namespace InstagramComments
                     }
                     Console.WriteLine(errormessage);
                 }
-                return;
-            }
-
-            // save session in file
-            var state = _InstaApi.GetStateDataAsStream();
-            // in .net core or uwp apps don't use GetStateDataAsStream.
-            // use this one:
-            // var state = _instaApi.GetStateDataAsString();
-            // this returns you session as json string.
-            using (var fileStream = File.Create(stateFile))
-            {
-                state.Seek(0, SeekOrigin.Begin);
-                state.CopyTo(fileStream);
+                //return;
+                await _InstaApi.SendRequestsAfterLoginAsync();
+                SaveSession();
             }
         }
+
+        internal void LoadSession()
+        {
+            try
+            {
+                // in .net core or uwp apps don't use LoadStateDataFromStream
+                // use this one:
+
+                Console.WriteLine("Loading state from file");
+                if (System.IO.File.Exists(stateFile))
+                {
+                    using (var stream = File.Open(stateFile, FileMode.Open))
+                    {
+                        using (var reader = new BinaryReader(stream, Encoding.UTF8, false))
+                        {
+                            var stateAsBase64String = reader.ReadString();
+                            var stateAsString = Encoding.UTF8.GetString(Convert.FromBase64String(stateAsBase64String));
+
+                            _InstaApi.LoadStateDataFromString(stateAsString);
+                        }
+                    }
+                }
+                // you should pass json string as parameter to this function.
+
+
+                //// load session file if exists
+                //if (File.Exists(stateFile))
+                //{
+                //    Console.WriteLine("Loading state from file");
+                //    using (var fs = File.OpenRead(stateFile))
+                //    {
+                //        _InstaApi.LoadStateDataFromStream(fs);
+
+                //    }
+                //}                
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"Error en creacion de archivo de mantenimiento de estado {e.Message}");
+            }
+        }
+
+        internal void SaveSession()
+        {
+            // save session in file
+            //var state = _InstaApi.GetStateDataAsStream();
+            //using (var fileStream = File.Create(stateFile))
+            //{
+            //    state.Seek(0, SeekOrigin.Begin);
+            //    state.CopyTo(fileStream);
+            //}
+
+            // in .net core or uwp apps don't use GetStateDataAsStream.
+            // use this one:
+            this.sessionstate = _InstaApi.GetStateDataAsString();
+            // this returns you session as json string.
+
+            using (var stream = File.Open(stateFile, FileMode.Create))
+            {
+                this.sessionstate = _InstaApi.GetStateDataAsString();
+                var stateAsBase64String = Convert.ToBase64String(Encoding.UTF8.GetBytes(this.sessionstate));
+
+                using (var writer = new BinaryWriter(stream, Encoding.UTF8, false))
+                {
+                    writer.Write(stateAsBase64String);
+                }
+            }
+
+        }
+
+        private void GetDevice()
+        {
+            // this is an custom android device based on Huawei Honor 8 Lite (PRA-LA1) device
+            this.device = new AndroidDevice
+            {
+                // Device name
+                AndroidBoardName = "HONOR",
+                // Device brand
+                DeviceBrand = "HUAWEI",
+                // Hardware manufacturer
+                HardwareManufacturer = "HUAWEI",
+                // Device model
+                DeviceModel = "PRA-LA1",
+                // Device model identifier
+                DeviceModelIdentifier = "PRA-LA1",
+                // Firmware brand
+                FirmwareBrand = "HWPRA-H",
+                // Hardware model
+                HardwareModel = "hi6250",
+                // Device guid
+                DeviceGuid = new Guid("be897499-c663-492e-a125-f4c8d3785ebf"),
+                // Phone guid
+                PhoneGuid = new Guid("7b72321f-dd9a-425e-b3ee-d4aaf476ec52"),
+                // Device id based on Device guid
+                DeviceId = ApiRequestMessage.GenerateDeviceIdFromGuid(new Guid("be897499-c663-492e-a125-f4c8d3785ebf")),
+                // Resolution
+                Resolution = "1080x1812",
+                // Dpi
+                Dpi = "480dpi",
+            };
+        }
+
+        private void IsStateFileExpire() {
+            
+        }
     }
-    
-
-
 }
 
 internal class InstaResults
