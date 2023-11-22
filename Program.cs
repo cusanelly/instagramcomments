@@ -19,7 +19,7 @@ namespace InstagramComments
     internal class Program
     {
         static InstagramServices services = new InstagramServices();
-        internal static int minutos = 5;
+        internal static int minutos = 10;
         static async Task Main(string[] args)
         {
             Console.WriteLine("Inicio Sesion.");
@@ -66,7 +66,7 @@ namespace InstagramComments
             var user = new UserSessionData
             {
                 UserName = model.Username,
-                Password = model.Password
+                Password = model.Password                
             };
 
             _InstaApi = InstaApiBuilder.CreateBuilder()
@@ -154,12 +154,12 @@ namespace InstagramComments
                         if ((maxpageload % 2) == 0)
                         {
                             Console.WriteLine("Descending...");
-                            Users = result.Value.OrderByDescending(r => r.UserName).Where(r => !r.IsPrivate).Select(r => r.UserName).Skip(skipusercount).Take(20).ToList();
+                            Users = result.Value.OrderByDescending(r => r.UserName).Where(r => !r.IsPrivate).Select(r => r.UserName).Skip(skipusercount).Take(10).ToList();
                         }
                         else
                         {
                             Console.WriteLine("Reverse resultados...");
-                            Users = result.Value.Select(r => r.UserName).Reverse().Skip(skipusercount).Take(20).ToList();
+                            Users = result.Value.Select(r => r.UserName).Reverse().Skip(skipusercount).Take(10).ToList();
 
                         }
                         //count = Users.Count;
@@ -177,7 +177,7 @@ namespace InstagramComments
                     }
                     else
                     {
-                        if (result.Info.NeedsChallenge)
+                        if (result.Info.ResponseType == ResponseType.ChallengeRequired)
                         {
                             Console.WriteLine("Requiere challenge para obtener listado de seguidores. Iniciando procedimiento de challenge...");
                             if (await ChallengeManage())
@@ -192,7 +192,15 @@ namespace InstagramComments
 
 
                         }
-                        Console.WriteLine("Error while searching users: " + result.Info.Message);
+                        else if (result.Info.ResponseType == ResponseType.LoginRequired)
+                        {
+                            Console.WriteLine("Error de sesion. Iniciando proceso de login...");
+                            await LoginAsync(true);
+                        }
+                        else
+                        {
+                            Console.WriteLine("Error while searching users: " + result.Info.Message);
+                        }
                     }
                 }
             }
@@ -227,18 +235,19 @@ namespace InstagramComments
                 Console.WriteLine($"Cantidad de usuarios: {contador}");
                 for (int i = 0; i < contador; i += 2)
                 {
-                    comment = (i + 1 > contador) ? $"@{usernames[i]}, @{usernames[i - 1]}" : $"@{usernames[i]}, @{usernames[i + 1]}";
+                    comment = (i + 1 >= contador) ? $"@{usernames[i]}, @{Faker.Internet.UserName()}" : $"@{usernames[i]}, @{usernames[i + 1]}";
 
                     var commentresult = await _InstaApi.CommentProcessor.CommentMediaAsync(model.PostId, comment);
                     Console.WriteLine($"{i} - Mensaje a enviar: {comment} - Resultado: {commentresult.Succeeded}");
                     if (!commentresult.Succeeded)
                     {
-                        if (commentresult.Info.Message == "login_required")
+                        if (commentresult.Info.ResponseType == ResponseType.LoginRequired)
                         {
                             Console.WriteLine("Error de sesion. Iniciando proceso de login...");
-                            await LoginAsync(true);
+                            if (await LoginAsync(true))
+                                await PublishComment();
                         }
-                        else if (commentresult.Info.Message == "challenge_required")
+                        else if (commentresult.Info.ResponseType == ResponseType.ChallengeRequired)
                         {
                             Console.WriteLine("Error de challenge. Iniciando proceso de challenge...");
                             await ChallengeManage();
@@ -246,7 +255,7 @@ namespace InstagramComments
                         else if (commentresult.Info.ResponseType == ResponseType.Spam)
                         {
                             Console.WriteLine($"Envio de mensajes ha sido declarado como spam. Cerrando ciclo. {JsonConvert.SerializeObject(commentresult.Info)}");
-                            Program.minutos+=5;
+                            Program.minutos *= 2;
                             return;
                         }
                         else
@@ -254,9 +263,10 @@ namespace InstagramComments
                             Console.WriteLine($"Error envio de comentario: {commentresult.Info.Message}");
                         }
                     }
-                    else {
-                        Users.RemoveRange(i, i+1);
-                    }                 
+                    else
+                    {
+                        Users.RemoveRange(i, i + 1);
+                    }
                     Thread.Sleep(5000);
                 }
 
@@ -267,7 +277,7 @@ namespace InstagramComments
             }
 
             Thread.Sleep(5000);
-            Program.minutos = 5;
+            Program.minutos = 10;
             //var result = await _InstaApi.LogoutAsync();
             //if (result.Succeeded)
             //{
@@ -287,31 +297,7 @@ namespace InstagramComments
             var challenge = await _InstaApi.GetChallengeRequireVerifyMethodAsync();
             if (challenge.Succeeded)
             {
-                if (challenge.Value.SubmitPhoneRequired)
-                {
-                    Console.WriteLine("Iniciando proceso de petiicon de codigo por sms...");
-                    var beginphoneverification = await _InstaApi.SubmitPhoneNumberForChallengeRequireAsync(model.PhoneNumber);
-                    if (beginphoneverification.Succeeded)
-                    {
-                        var phonecodeverification = await _InstaApi.RequestVerifyCodeToSMSForChallengeRequireAsync();
-
-                        if (phonecodeverification.Succeeded)
-                        {
-                            Console.WriteLine("Codigo enviado. Revisar telefono para insertar codigo.");
-                            var code = Console.ReadLine();
-                            var codeverification = await _InstaApi.VerifyCodeForChallengeRequireAsync(code);
-                            if (!codeverification.Succeeded)
-                            {
-                                Console.WriteLine($"Error en peticion de codigo de challenge: {JsonConvert.SerializeObject(codeverification.Info.Message)}");
-                            }
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine($"Error en peticion de codigo de challenge: {JsonConvert.SerializeObject(beginphoneverification.Info.Message)}");
-                    }
-                }
-
+                //challenge.Value.StepData.PhoneNumber = model.PhoneNumber;
                 Console.WriteLine("Iniciando proceso de petiicon de codigo por correo...");
                 var requestforcode = await _InstaApi.RequestVerifyCodeToEmailForChallengeRequireAsync();
                 if (requestforcode.Succeeded)
@@ -326,32 +312,19 @@ namespace InstagramComments
                     }
                     else
                     {
-                        Console.WriteLine("Codigo aceptando.");
+                        Console.WriteLine("Codigo aceptado.");
                     }
-
                 }
-                else
-                {
-
-                }
-
-            }
-            //else if (challenge.Info.NeedsChallenge)
-            //{
-            //    if (challenge.Info.Message.Contains("LoginAsync"))
-            //    {
-                    
-            //    }
-            //}
-            else
+            }else
             {
                 Console.WriteLine($"Error en verificacion de metodo de challenge: {JsonConvert.SerializeObject(challenge.Info)}");
             }
             return result;
         }
 
-        internal async Task LoginAsync(bool loginask = false)
-        {            
+        internal async Task<bool> LoginAsync(bool loginask = false)
+        {
+            bool result = false;
             model = configuration.GetSection("InstagramSecrets").Get<InstagramSecrets>();
             var user = new UserSessionData
             {
@@ -370,7 +343,7 @@ namespace InstagramComments
             if (!loginask)
             {
                 LoadSession();
-            }            
+            }
 
             string errormessage = "Login exitoso.";
             if (!_InstaApi.IsUserAuthenticated)
@@ -384,7 +357,7 @@ namespace InstagramComments
                 {
                     if (loginresult.Info.NeedsChallenge)
                     {
-                        _ = await ChallengeManage();
+                        result = await ChallengeManage();
                     }
                     else
                     {
@@ -394,8 +367,9 @@ namespace InstagramComments
                 }
                 //return;
                 await _InstaApi.SendRequestsAfterLoginAsync();
-                SaveSession();
+                result = SaveSession();
             }
+            return result;
         }
 
         internal void LoadSession()
@@ -439,8 +413,9 @@ namespace InstagramComments
             }
         }
 
-        internal void SaveSession()
+        internal bool SaveSession()
         {
+            bool result = false;
             // save session in file
             //var state = _InstaApi.GetStateDataAsStream();
             //using (var fileStream = File.Create(stateFile))
@@ -462,9 +437,10 @@ namespace InstagramComments
                 using (var writer = new BinaryWriter(stream, Encoding.UTF8, false))
                 {
                     writer.Write(stateAsBase64String);
+                    result = true;
                 }
             }
-
+            return result;
         }
 
         private void GetDevice()
@@ -499,8 +475,54 @@ namespace InstagramComments
             };
         }
 
-        private void IsStateFileExpire() {
-            
+        private async Task ChallengePhone()
+        {
+            var phonecodeverification = await _InstaApi.RequestVerifyCodeToSMSForChallengeRequireAsync();
+            //var challenge = await _InstaApi.RequestVerifyCodeToSMSForChallengeRequireAsync();
+            //if (challenge.Info)
+            //{
+
+            //}
+
+            //    Console.WriteLine("Iniciando proceso de petiicon de codigo por sms...");
+            //var beginphoneverification = await _InstaApi.SubmitPhoneNumberForChallengeRequireAsync(model.PhoneNumber);
+            //if (challenge.Value.SubmitPhoneRequired)
+            //{
+
+            //    if (beginphoneverification.Succeeded)
+            //    {
+
+
+            //        if (phonecodeverification.Succeeded)
+            //        {
+            //            Console.WriteLine("Codigo enviado. Revisar telefono para insertar codigo.");
+            //            var code = Console.ReadLine();
+            //            var codeverification = await _InstaApi.VerifyCodeForChallengeRequireAsync(code);
+            //            if (!codeverification.Succeeded)
+            //            {
+            //                Console.WriteLine($"Error en peticion de codigo de challenge: {JsonConvert.SerializeObject(codeverification.Info.Message)}");
+            //            }
+            //        }
+            //    }
+            //    else
+            //    {
+            //        Console.WriteLine($"Error en peticion de codigo de challenge: {JsonConvert.SerializeObject(beginphoneverification.Info.Message)}");
+            //    }
+            //}
+            //else
+            //{
+            //    var phonecodeverification = await _InstaApi.RequestVerifyCodeToSMSForChallengeRequireAsync();
+            //    if (phonecodeverification.Succeeded)
+            //    {
+            //        Console.WriteLine("Codigo enviado. Revisar telefono para insertar codigo.");
+            //        var code = Console.ReadLine();
+            //        var codeverification = await _InstaApi.VerifyCodeForChallengeRequireAsync(code);
+            //        if (!codeverification.Succeeded)
+            //        {
+            //            Console.WriteLine($"Error en peticion de codigo de challenge: {JsonConvert.SerializeObject(codeverification.Info.Message)}");
+            //        }
+            //    }
+            //}
         }
     }
 }
