@@ -19,6 +19,7 @@ namespace InstagramComments
     internal class Program
     {
         static InstagramServices services = new InstagramServices();
+        internal static int minutos = 5;
         static async Task Main(string[] args)
         {
             Console.WriteLine("Inicio Sesion.");
@@ -33,8 +34,8 @@ namespace InstagramComments
                 Console.WriteLine($"Usuario fallo en login. Inicializando nuevamente.");
                 services = new InstagramServices();
             }
-            Console.WriteLine("Espera de 10 minutos para siguiente llamado.");
-            Thread.Sleep(TimeSpan.FromMinutes(10));
+            Console.WriteLine($"Espera de {minutos} minutos para siguiente llamado.");
+            Thread.Sleep(TimeSpan.FromMinutes(minutos));
             await Main(args);
 
         }
@@ -244,7 +245,8 @@ namespace InstagramComments
                         }
                         else if (commentresult.Info.ResponseType == ResponseType.Spam)
                         {
-                            Console.WriteLine("Envio de mensajes ha sido declarado como spam. Cerrando ciclo.");
+                            Console.WriteLine($"Envio de mensajes ha sido declarado como spam. Cerrando ciclo. {JsonConvert.SerializeObject(commentresult.Info)}");
+                            Program.minutos+=5;
                             return;
                         }
                         else
@@ -265,6 +267,7 @@ namespace InstagramComments
             }
 
             Thread.Sleep(5000);
+            Program.minutos = 5;
             //var result = await _InstaApi.LogoutAsync();
             //if (result.Succeeded)
             //{
