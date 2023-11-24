@@ -241,27 +241,42 @@ namespace InstagramComments
                     Console.WriteLine($"{i} - Mensaje a enviar: {comment} - Resultado: {commentresult.Succeeded}");
                     if (!commentresult.Succeeded)
                     {
-                        if (commentresult.Info.ResponseType == ResponseType.LoginRequired)
+                        switch (commentresult.Info.ResponseType)
                         {
-                            Console.WriteLine("Error de sesion. Iniciando proceso de login...");
-                            if (await LoginAsync(true))
-                                await PublishComment();
+                            case ResponseType.LoginRequired:
+                                Console.WriteLine("Error de sesion. Iniciando proceso de login...");
+                                if (await LoginAsync(true))
+                                    await PublishComment();
+                                break;
+                            case ResponseType.ChallengeRequired:
+                                Console.WriteLine("Error de challenge. Iniciando proceso de challenge...");
+                                await ChallengeManage();
+                                break;
+                            case ResponseType.Spam:
+                                Console.WriteLine($"Envio de mensajes ha sido declarado como spam. Cerrando ciclo. {JsonConvert.SerializeObject(commentresult.Info)}");
+                                Program.minutos *= 2;                                
+                                break;
+                            default:
+                                Console.WriteLine($"Error envio de comentario: {commentresult.Info.Message}");
+                                break;
                         }
-                        else if (commentresult.Info.ResponseType == ResponseType.ChallengeRequired)
-                        {
-                            Console.WriteLine("Error de challenge. Iniciando proceso de challenge...");
-                            await ChallengeManage();
-                        }
-                        else if (commentresult.Info.ResponseType == ResponseType.Spam)
-                        {
-                            Console.WriteLine($"Envio de mensajes ha sido declarado como spam. Cerrando ciclo. {JsonConvert.SerializeObject(commentresult.Info)}");
-                            Program.minutos *= 2;
-                            return;
-                        }
-                        else
-                        {
-                            Console.WriteLine($"Error envio de comentario: {commentresult.Info.Message}");
-                        }
+                        //if (commentresult.Info.ResponseType == ResponseType.LoginRequired)
+                        //{
+                        //    Console.WriteLine("Error de sesion. Iniciando proceso de login...");
+                        //    if (await LoginAsync(true))
+                        //        await PublishComment();
+                        //}
+                        //else if (commentresult.Info.ResponseType == ResponseType.ChallengeRequired)
+                        //{
+                        //    Console.WriteLine("Error de challenge. Iniciando proceso de challenge...");
+                        //    await ChallengeManage();
+                        //}
+                        //else if (commentresult.Info.ResponseType == ResponseType.Spam)
+                        //{
+                        //    Console.WriteLine($"Envio de mensajes ha sido declarado como spam. Cerrando ciclo. {JsonConvert.SerializeObject(commentresult.Info)}");
+                        //    Program.minutos *= 2;
+                        //    return;
+                        //}                       
                     }
                     else
                     {
@@ -380,7 +395,10 @@ namespace InstagramComments
                 // use this one:
 
                 Console.WriteLine("Loading state from file");
-                if (System.IO.File.Exists(stateFile))
+                bool sesionvalida = File.Exists(stateFile);
+                var datedifference = DateTime.Now - File.GetCreationTime(stateFile);
+                
+                if (sesionvalida && datedifference.Days < 1 && datedifference.Hours < 1)
                 {
                     using (var stream = File.Open(stateFile, FileMode.Open))
                     {
