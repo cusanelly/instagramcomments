@@ -12,27 +12,31 @@ using InstagramComments.Settings;
 using System.Reflection;
 using InstagramApiSharp.Classes.Android.DeviceInfo;
 using System.Text;
+using Bogus;
 
 
 namespace InstagramComments
 {
     internal class Program
     {
-        static InstagramServices services = new InstagramServices();
+        //internal static InstagramServices Services = new InstagramServices();
         internal static int minutos = 10;
+        internal static Faker FakerData = new("es");
+        internal static IConfiguration configuration = new ConfigurationBuilder().AddUserSecrets<InstagramServices>().Build();
+        internal static InstagramServices Services = new InstagramServices();
         static async Task Main(string[] args)
         {
             Console.WriteLine("Inicio Sesion.");
 
-            if (services._InstaApi.IsUserAuthenticated)
+            if (Services._InstaApi.IsUserAuthenticated)
             {
                 Console.WriteLine("Llamado a publicacion de comentario.");
-                await services.PublishComment();
+                await Services.PublishComment();
             }
             else
             {
                 Console.WriteLine($"Usuario fallo en login. Inicializando nuevamente.");
-                services = new InstagramServices();
+                Services = new InstagramServices();
             }
             Console.WriteLine($"Espera de {minutos} minutos para siguiente llamado.");
             Thread.Sleep(TimeSpan.FromMinutes(minutos));
@@ -55,18 +59,18 @@ namespace InstagramComments
         List<string> Users = new();
 
         // Uso de Visual Stuido User Secrets.
-        IConfiguration configuration = new ConfigurationBuilder().AddUserSecrets<InstagramServices>().Build();
-        private InstagramSecrets model = new();
+        
+        private InstagramSecrets? model = new();
         public InstagramServices()
         {
             GetDevice();
 
 
-            model = configuration.GetSection("InstagramSecrets").Get<InstagramSecrets>();
-            var user = new UserSessionData
+            model = Program.configuration.GetSection("InstagramSecrets").Get<InstagramSecrets>();
+            UserSessionData user = new UserSessionData
             {
                 UserName = model.Username,
-                Password = model.Password                
+                Password = model.Password
             };
 
             _InstaApi = InstaApiBuilder.CreateBuilder()
@@ -112,18 +116,21 @@ namespace InstagramComments
             //{
             //   randomaccount = new Random().Next(0, accounts.Length);
             //}
-            randomaccount = new Random().Next(0, model.InstagramAccounts.Length);
-            int useridrand = new Random().Next(0, 9999999);
-
-            int maxpageload = new Random().Next(0, 50);
-            int randskip = new Random().Next(0, maxpageload);
+            //randomaccount = new Random().Next(0, model.InstagramAccounts.Length);
+            randomaccount = Program.FakerData.Random.Number(0,model.InstagramAccounts.Length);
+            //int useridrand = new Random().Next(0,99999999);
+            int useridrand = Program.FakerData.Random.Number(0, 99999999);
+            /*int maxpageload = new Random().Next(0, 50);*/
+            int maxpageload = Program.FakerData.Random.Number(0, 50);
+            //int randskip = new Random().Next(0, maxpageload);
+            int randskip = Program.FakerData.Random.Number(0, maxpageload);
             IResult<InstaUserShortList> result;
             var pagination = PaginationParameters.MaxPagesToLoad(50);
             try
             {
                 if (!Users.Any())
                 {
-                    result = await _InstaApi.UserProcessor.GetUserFollowersAsync(model.InstagramAccounts[randomaccount].ToString(), pagination);
+                    result = await _InstaApi.UserProcessor.GetUserFollowersAsync(model.InstagramAccounts[randomaccount], pagination);
 
                     //if (String.IsNullOrEmpty(nextpageinsta) && !useraccount.Equals(accounts[randomaccount]))
                     //{
@@ -154,7 +161,7 @@ namespace InstagramComments
                         if ((maxpageload % 2) == 0)
                         {
                             Console.WriteLine("Descending...");
-                            Users = result.Value.OrderByDescending(r => r.UserName).Where(r => !r.IsPrivate).Select(r => r.UserName).Skip(skipusercount).Take(10).ToList();
+                            Users = result.Value.OrderByDescending(r => r.UserName.StartsWith(Program.FakerData.Random.AlphaNumeric(1))).Where(r => !r.IsPrivate).Select(r => r.UserName).Skip(skipusercount).Take(10).ToList();
                         }
                         else
                         {
@@ -218,6 +225,8 @@ namespace InstagramComments
         {
             var usernames = await GetRandomAccounts();
             string comment = "";
+            
+            
             if (usernames == null)
             {
                 Console.WriteLine("Listado de usuarios es nulo. Saliendo de iteracion.");
@@ -235,7 +244,7 @@ namespace InstagramComments
                 Console.WriteLine($"Cantidad de usuarios: {contador}");
                 for (int i = 0; i < contador; i += 2)
                 {
-                    comment = (i + 1 >= contador) ? $"@{usernames[i]}, @{Faker.Internet.UserName()}" : $"@{usernames[i]}, @{usernames[i + 1]}";
+                    comment = (i + 1 >= contador) ? $"@{usernames[i]}, @{Program.FakerData.Internet.UserName()}" : $"@{usernames[i]}, @{usernames[i + 1]}";
 
                     var commentresult = await _InstaApi.CommentProcessor.CommentMediaAsync(model.PostId, comment);
                     Console.WriteLine($"{i} - Mensaje a enviar: {comment} - Resultado: {commentresult.Succeeded}");
@@ -254,7 +263,7 @@ namespace InstagramComments
                                 break;
                             case ResponseType.Spam:
                                 Console.WriteLine($"Envio de mensajes ha sido declarado como spam. Cerrando ciclo. {JsonConvert.SerializeObject(commentresult.Info)}");
-                                Program.minutos *= 2;                                
+                                Program.minutos *= 2;
                                 break;
                             default:
                                 Console.WriteLine($"Error envio de comentario: {commentresult.Info.Message}");
@@ -316,21 +325,11 @@ namespace InstagramComments
                 Console.WriteLine("Iniciando proceso de petiicon de codigo por correo...");
                 var requestforcode = await _InstaApi.RequestVerifyCodeToEmailForChallengeRequireAsync();
                 if (requestforcode.Succeeded)
-                {
-                    Console.WriteLine("Codigo enviado. Revisar correo para insertar codigo.");
-                    var code = Console.ReadLine();
-                    var codeverification = await _InstaApi.VerifyCodeForChallengeRequireAsync(code);
-                    result = codeverification.Succeeded;
-                    if (!codeverification.Succeeded)
-                    {
-                        Console.WriteLine($"unable to login {codeverification.Info.Message}");
-                    }
-                    else
-                    {
-                        Console.WriteLine("Codigo aceptado.");
-                    }
+                {                    
+                    await CodeVerification();
                 }
-            }else
+            }
+            else
             {
                 Console.WriteLine($"Error en verificacion de metodo de challenge: {JsonConvert.SerializeObject(challenge.Info)}");
             }
@@ -340,7 +339,7 @@ namespace InstagramComments
         internal async Task<bool> LoginAsync(bool loginask = false)
         {
             bool result = false;
-            model = configuration.GetSection("InstagramSecrets").Get<InstagramSecrets>();
+            model = Program.configuration.GetSection("InstagramSecrets").Get<InstagramSecrets>();
             var user = new UserSessionData
             {
                 UserName = model.Username,
@@ -397,7 +396,7 @@ namespace InstagramComments
                 Console.WriteLine("Loading state from file");
                 bool sesionvalida = File.Exists(stateFile);
                 var datedifference = DateTime.Now - File.GetCreationTime(stateFile);
-                
+
                 if (sesionvalida && datedifference.Days < 1 && datedifference.Hours < 1)
                 {
                     using (var stream = File.Open(stateFile, FileMode.Open))
@@ -495,52 +494,37 @@ namespace InstagramComments
 
         private async Task ChallengePhone()
         {
-            var phonecodeverification = await _InstaApi.RequestVerifyCodeToSMSForChallengeRequireAsync();
-            //var challenge = await _InstaApi.RequestVerifyCodeToSMSForChallengeRequireAsync();
-            //if (challenge.Info)
-            //{
+            // send verification code to phone number
+            var phoneNumber = await _InstaApi.RequestVerifyCodeToSMSForChallengeRequireAsync();
+            if (phoneNumber.Succeeded)
+            {
+                await CodeVerification();
+            }
+        }
 
-            //}
-
-            //    Console.WriteLine("Iniciando proceso de petiicon de codigo por sms...");
-            //var beginphoneverification = await _InstaApi.SubmitPhoneNumberForChallengeRequireAsync(model.PhoneNumber);
-            //if (challenge.Value.SubmitPhoneRequired)
-            //{
-
-            //    if (beginphoneverification.Succeeded)
-            //    {
-
-
-            //        if (phonecodeverification.Succeeded)
-            //        {
-            //            Console.WriteLine("Codigo enviado. Revisar telefono para insertar codigo.");
-            //            var code = Console.ReadLine();
-            //            var codeverification = await _InstaApi.VerifyCodeForChallengeRequireAsync(code);
-            //            if (!codeverification.Succeeded)
-            //            {
-            //                Console.WriteLine($"Error en peticion de codigo de challenge: {JsonConvert.SerializeObject(codeverification.Info.Message)}");
-            //            }
-            //        }
-            //    }
-            //    else
-            //    {
-            //        Console.WriteLine($"Error en peticion de codigo de challenge: {JsonConvert.SerializeObject(beginphoneverification.Info.Message)}");
-            //    }
-            //}
-            //else
-            //{
-            //    var phonecodeverification = await _InstaApi.RequestVerifyCodeToSMSForChallengeRequireAsync();
-            //    if (phonecodeverification.Succeeded)
-            //    {
-            //        Console.WriteLine("Codigo enviado. Revisar telefono para insertar codigo.");
-            //        var code = Console.ReadLine();
-            //        var codeverification = await _InstaApi.VerifyCodeForChallengeRequireAsync(code);
-            //        if (!codeverification.Succeeded)
-            //        {
-            //            Console.WriteLine($"Error en peticion de codigo de challenge: {JsonConvert.SerializeObject(codeverification.Info.Message)}");
-            //        }
-            //    }
-            //}
+        private async Task<bool> CodeVerification()
+        {
+            bool result = false;
+            Console.Write("Codigo enviado. Ingresa el codigo enviado: ");
+            string? code = Console.ReadLine();
+            if (string.IsNullOrEmpty(code))
+            {
+                Console.WriteLine("No puedes ingresar un codigo en blanco.");
+                await CodeVerification();
+            }
+            var codeverification = await _InstaApi.VerifyCodeForChallengeRequireAsync(code);
+            result = codeverification.Succeeded;
+            if (!result)
+            {
+                Console.WriteLine($"Error en verificacion de codigo. {JsonConvert.SerializeObject(codeverification.Info)}");
+                Console.WriteLine("Iniciando nueva peticion.");
+                await CodeVerification();
+            }
+            else
+            {
+                Console.WriteLine("Codigo aceptado.");
+            }
+            return result;
         }
     }
 }
