@@ -13,6 +13,7 @@ using System.Reflection;
 using InstagramApiSharp.Classes.Android.DeviceInfo;
 using System.Text;
 using Bogus;
+using InstagramApiSharp.Classes.SessionHandlers;
 
 
 namespace InstagramComments
@@ -37,6 +38,7 @@ namespace InstagramComments
             {
                 Console.WriteLine($"Usuario fallo en login. Inicializando nuevamente.");
                 Services = new InstagramServices();
+                await Main(args);
             }
             Console.WriteLine($"Espera de {minutos} minutos para siguiente llamado.");
             Thread.Sleep(TimeSpan.FromMinutes(minutos));
@@ -50,6 +52,7 @@ namespace InstagramComments
     internal class InstagramServices
     {
         internal IInstaApi _InstaApi;
+        internal ISessionHandler _SessionHandler;
         internal string nextpageinsta = "";
         internal string useraccount = "";
         internal int count = 0;
@@ -59,7 +62,7 @@ namespace InstagramComments
         List<string> Users = new();
 
         // Uso de Visual Stuido User Secrets.
-        
+
         private InstagramSecrets? model = new();
         public InstagramServices()
         {
@@ -72,10 +75,17 @@ namespace InstagramComments
                 UserName = model.Username,
                 Password = model.Password
             };
+            _SessionHandler = new FileSessionHandler
+            {
+                FilePath = stateFile,
+                InstaApi = _InstaApi
+            };
+
 
             _InstaApi = InstaApiBuilder.CreateBuilder()
                 .SetUser(user)
                 .UseLogger(new DebugLogger(LogLevel.Exceptions))
+                //.SetSessionHandler(_SessionHandler)
                 .Build();
             _InstaApi.SetDevice(this.device);
 
@@ -104,6 +114,7 @@ namespace InstagramComments
                 //return;
                 _ = _InstaApi.SendRequestsAfterLoginAsync().Result;
                 SaveSession();
+
             }
         }
 
@@ -111,26 +122,26 @@ namespace InstagramComments
         {
             //var accounts = configuration.GetSection("Instagram").GetSection("instagramaccounts").Value.ToArray();
 
-            int randomaccount = 0;
+            //int randomaccount = 0;
             //if (String.IsNullOrEmpty(useraccount))
             //{
             //   randomaccount = new Random().Next(0, accounts.Length);
             //}
             //randomaccount = new Random().Next(0, model.InstagramAccounts.Length);
-            randomaccount = Program.FakerData.Random.Number(0,model.InstagramAccounts.Length);
+            string randomaccount = Program.FakerData.PickRandom(model.InstagramAccounts);/*.Random.Number(0,model.InstagramAccounts.Length);*/
             //int useridrand = new Random().Next(0,99999999);
-            int useridrand = Program.FakerData.Random.Number(0, 99999999);
+            //int useridrand = Program.FakerData.Random.Number(0, 99999999);
             /*int maxpageload = new Random().Next(0, 50);*/
-            int maxpageload = Program.FakerData.Random.Number(0, 50);
+            int maxpageload = Program.FakerData.Random.Number(0, 20);
             //int randskip = new Random().Next(0, maxpageload);
-            int randskip = Program.FakerData.Random.Number(0, maxpageload);
+            //int randskip = Program.FakerData.Random.Number(0, maxpageload);
             IResult<InstaUserShortList> result;
-            var pagination = PaginationParameters.MaxPagesToLoad(50);
+            var pagination = PaginationParameters.MaxPagesToLoad(maxpageload);
             try
             {
                 if (!Users.Any())
                 {
-                    result = await _InstaApi.UserProcessor.GetUserFollowersAsync(model.InstagramAccounts[randomaccount], pagination);
+                    result = await _InstaApi.UserProcessor.GetUserFollowersAsync(randomaccount, pagination);
 
                     //if (String.IsNullOrEmpty(nextpageinsta) && !useraccount.Equals(accounts[randomaccount]))
                     //{
@@ -153,34 +164,29 @@ namespace InstagramComments
                     //    count = 0;
                     //}
 
-                    Console.WriteLine($"Cuenta de instagram a usar: {model.InstagramAccounts[randomaccount]}");
+                    Console.WriteLine($"Cuenta de instagram a usar: {randomaccount}");
                     if (result.Succeeded || result.Value != null)
                     {
-                        int skipusercount = result.Value.Count / 2;
-                        //Users = result.Value.Where(r => r.Pk > useridrand).Select(r => r.UserName).Skip(randskip / 2).Take(2).ToList();
-                        if ((maxpageload % 2) == 0)
-                        {
-                            Console.WriteLine("Descending...");
-                            Users = result.Value.OrderByDescending(r => r.UserName.StartsWith(Program.FakerData.Random.AlphaNumeric(1))).Where(r => !r.IsPrivate).Select(r => r.UserName).Skip(skipusercount).Take(10).ToList();
-                        }
-                        else
-                        {
-                            Console.WriteLine("Reverse resultados...");
-                            Users = result.Value.Select(r => r.UserName).Reverse().Skip(skipusercount).Take(10).ToList();
+                        var tre = result.Value.ToArray();
+                        Random.Shared.Shuffle(tre);
+                        Users = tre.Select(x => x.UserName).Take(10).ToList();
 
-                        }
-                        //count = Users.Count;
-                        //Console.WriteLine("User search count: " + result.Value.Users?.Count);
-                        //if (result.Value.Users?.Count > 0)
+                        #region Old randomizer
+                        //int skipusercount = result.Value.Count / 2;
+                        ////Users = result.Value.Where(r => r.Pk > useridrand).Select(r => r.UserName).Skip(randskip / 2).Take(2).ToList();
+                        //if ((maxpageload % 2) == 0)
                         //{
-                        //    int usercount = 0;
-                        //    do
-                        //    {
-                        //        Users = result.Value.Users.Where(r => r.IsVerified && r.FollowersCount > 20 && r.FollowersCount < 5000 && !r.HasAnonymousProfilePicture).Select(t => t).Take(3);
-
-                        //    } while (usercount < 3);
+                        //    Console.WriteLine("Descending...");
+                        //    Users = result.Value.OrderByDescending(r => r.UserName).Where(r => !r.IsPrivate).Select(r => r.UserName).Skip(skipusercount).Take(10).ToList();
+                        //}
+                        //else
+                        //{
+                        //    Console.WriteLine("Reverse resultados...");
+                        //    Users = result.Value.Select(r => r.UserName).Reverse().Skip(skipusercount).Take(10).ToList();
 
                         //}
+                        #endregion
+                        
                     }
                     else
                     {
@@ -202,7 +208,10 @@ namespace InstagramComments
                         else if (result.Info.ResponseType == ResponseType.LoginRequired)
                         {
                             Console.WriteLine("Error de sesion. Iniciando proceso de login...");
-                            await LoginAsync(true);
+                            if (await LoginAsync(true))
+                            {
+                                Users = await GetRandomAccounts();
+                            }
                         }
                         else
                         {
@@ -225,8 +234,8 @@ namespace InstagramComments
         {
             var usernames = await GetRandomAccounts();
             string comment = "";
-            
-            
+
+
             if (usernames == null)
             {
                 Console.WriteLine("Listado de usuarios es nulo. Saliendo de iteracion.");
@@ -236,7 +245,7 @@ namespace InstagramComments
             {
                 if (!usernames.Any())
                 {
-                    Console.WriteLine($"No se encontraron usuarios");
+                    Console.WriteLine($"No se encontraron usuarios.");
                     return;
                 }
 
@@ -244,7 +253,9 @@ namespace InstagramComments
                 Console.WriteLine($"Cantidad de usuarios: {contador}");
                 for (int i = 0; i < contador; i += 2)
                 {
-                    comment = (i + 1 >= contador) ? $"@{usernames[i]}, @{Program.FakerData.Internet.UserName()}" : $"@{usernames[i]}, @{usernames[i + 1]}";
+                    comment = (i == contador - 1) ? $"@{usernames[0]}, @{Program.FakerData.Internet.UserName()}" : $"@{usernames[0]}, @{usernames[1]}";
+
+                    Console.WriteLine($"{i} - Mensaje a enviar: {comment} - Resultado:");
 
                     var commentresult = await _InstaApi.CommentProcessor.CommentMediaAsync(model.PostId, comment);
                     Console.WriteLine($"{i} - Mensaje a enviar: {comment} - Resultado: {commentresult.Succeeded}");
@@ -269,27 +280,10 @@ namespace InstagramComments
                                 Console.WriteLine($"Error envio de comentario: {commentresult.Info.Message}");
                                 break;
                         }
-                        //if (commentresult.Info.ResponseType == ResponseType.LoginRequired)
-                        //{
-                        //    Console.WriteLine("Error de sesion. Iniciando proceso de login...");
-                        //    if (await LoginAsync(true))
-                        //        await PublishComment();
-                        //}
-                        //else if (commentresult.Info.ResponseType == ResponseType.ChallengeRequired)
-                        //{
-                        //    Console.WriteLine("Error de challenge. Iniciando proceso de challenge...");
-                        //    await ChallengeManage();
-                        //}
-                        //else if (commentresult.Info.ResponseType == ResponseType.Spam)
-                        //{
-                        //    Console.WriteLine($"Envio de mensajes ha sido declarado como spam. Cerrando ciclo. {JsonConvert.SerializeObject(commentresult.Info)}");
-                        //    Program.minutos *= 2;
-                        //    return;
-                        //}                       
                     }
                     else
                     {
-                        Users.RemoveRange(i, i + 1);
+                        Users.RemoveRange(0, 1);
                     }
                     Thread.Sleep(5000);
                 }
@@ -302,16 +296,6 @@ namespace InstagramComments
 
             Thread.Sleep(5000);
             Program.minutos = 10;
-            //var result = await _InstaApi.LogoutAsync();
-            //if (result.Succeeded)
-            //{
-            //    Console.WriteLine("Cerrando Sesion.");
-            //}
-            //await _InstaApi.LogoutAsync();
-            //var commentResult = await _InstaApi.CommentProcessor.CommentMediaAsync("", "Hi there!");
-            //Console.WriteLine(commentResult.Succeeded
-            //    ? $"Comment created: {commentResult.Value.Pk}, text: {commentResult.Value.Text}"
-            //    : $"Unable to create comment: {commentResult.Info.Message}");
         }
 
         private async Task<bool> ChallengeManage()
@@ -325,7 +309,7 @@ namespace InstagramComments
                 Console.WriteLine("Iniciando proceso de petiicon de codigo por correo...");
                 var requestforcode = await _InstaApi.RequestVerifyCodeToEmailForChallengeRequireAsync();
                 if (requestforcode.Succeeded)
-                {                    
+                {
                     await CodeVerification();
                 }
             }
@@ -336,6 +320,13 @@ namespace InstagramComments
             return result;
         }
 
+        internal async Task LogooutAsync()
+        {
+            await _InstaApi.LogoutAsync();
+            File.Delete(stateFile);
+        }
+
+
         internal async Task<bool> LoginAsync(bool loginask = false)
         {
             bool result = false;
@@ -343,9 +334,7 @@ namespace InstagramComments
             var user = new UserSessionData
             {
                 UserName = model.Username,
-                Password = model.Password,
-                //PublicKey = "33efa3bcdbb00691fc622d8eb4f50938",
-                //PublicKeyId = "734750815240333"
+                Password = model.Password
             };
 
             _InstaApi = InstaApiBuilder.CreateBuilder()
@@ -394,8 +383,9 @@ namespace InstagramComments
                 // use this one:
 
                 Console.WriteLine("Loading state from file");
+                //_SessionHandler.Load();
                 bool sesionvalida = File.Exists(stateFile);
-                var datedifference = DateTime.Now - File.GetCreationTime(stateFile);
+                var datedifference = DateTime.Now - File.GetLastWriteTime(stateFile);
 
                 if (sesionvalida && datedifference.Days < 1 && datedifference.Hours < 1)
                 {
@@ -433,6 +423,11 @@ namespace InstagramComments
         internal bool SaveSession()
         {
             bool result = false;
+
+            //_SessionHandler.Save();
+
+
+
             // save session in file
             //var state = _InstaApi.GetStateDataAsStream();
             //using (var fileStream = File.Create(stateFile))
@@ -443,8 +438,8 @@ namespace InstagramComments
 
             // in .net core or uwp apps don't use GetStateDataAsStream.
             // use this one:
-            this.sessionstate = _InstaApi.GetStateDataAsString();
-            // this returns you session as json string.
+            //this.sessionstate = _InstaApi.GetStateDataAsString();
+            //// this returns you session as json string.
 
             using (var stream = File.Open(stateFile, FileMode.Create))
             {
