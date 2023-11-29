@@ -9,7 +9,6 @@ using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 
 using InstagramComments.Settings;
-using System.Reflection;
 using InstagramApiSharp.Classes.Android.DeviceInfo;
 using System.Text;
 using Bogus;
@@ -21,7 +20,7 @@ namespace InstagramComments
     internal class Program
     {
         //internal static InstagramServices Services = new InstagramServices();
-        internal static int minutos = 120;
+        internal static int minutos = 2;
         internal static Faker FakerData = new("es");
         internal static IConfiguration configuration = new ConfigurationBuilder().AddUserSecrets<InstagramServices>().Build();
         internal static InstagramServices Services = new InstagramServices();
@@ -40,8 +39,8 @@ namespace InstagramComments
                 Services = new InstagramServices();
                 await Main(args);
             }
-            Console.WriteLine($"Espera de {minutos} minutos para siguiente llamado.");
-            Thread.Sleep(TimeSpan.FromMinutes(minutos));
+            Console.WriteLine($"Espera de {minutos} horas para siguiente llamado.");
+            Thread.Sleep(TimeSpan.FromHours(minutos));
             await Main(args);
 
         }
