@@ -21,7 +21,7 @@ namespace InstagramComments
     internal class Program
     {
         //internal static InstagramServices Services = new InstagramServices();
-        internal static int minutos = 10;
+        internal static int minutos = 120;
         internal static Faker FakerData = new("es");
         internal static IConfiguration configuration = new ConfigurationBuilder().AddUserSecrets<InstagramServices>().Build();
         internal static InstagramServices Services = new InstagramServices();
@@ -255,9 +255,9 @@ namespace InstagramComments
                 {
                     comment = (i == contador - 1) ? $"@{usernames[0]}, @{Program.FakerData.Internet.UserName()}" : $"@{usernames[0]}, @{usernames[1]}";
 
-                    Console.WriteLine($"{i} - Mensaje a enviar: {comment} - Resultado:");
+                    //Console.WriteLine($"{i} - Mensaje a enviar: {comment} - Resultado:");
 
-                    var commentresult = await _InstaApi.CommentProcessor.CommentMediaAsync(model.PostId, comment);
+                    var commentresult = await _InstaApi.CommentProcessor.CommentMediaAsync(model.JaiberPost, comment);
                     Console.WriteLine($"{i} - Mensaje a enviar: {comment} - Resultado: {commentresult.Succeeded}");
                     if (!commentresult.Succeeded)
                     {
@@ -277,12 +277,15 @@ namespace InstagramComments
                                 Program.minutos *= 2;
                                 break;
                             default:
-                                Console.WriteLine($"Error envio de comentario: {commentresult.Info.Message}");
+                                Console.WriteLine($"Error envio de comentario: {JsonConvert.SerializeObject(commentresult.Info)}");
+                                Users.RemoveRange(0, 1);
+                                usernames.RemoveRange(0, 1);
                                 break;
                         }
                     }
                     else
                     {
+                        usernames.RemoveRange(0,1);
                         Users.RemoveRange(0, 1);
                     }
                     Thread.Sleep(5000);
