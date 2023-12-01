@@ -20,18 +20,29 @@ namespace InstagramComments
     internal class Program
     {
         //internal static InstagramServices Services = new InstagramServices();
-        internal static int minutos = 2;
+        internal static int minutos = 60;
         internal static Faker FakerData = new("es");
         internal static IConfiguration configuration = new ConfigurationBuilder().AddUserSecrets<InstagramServices>().Build();
         internal static InstagramServices Services = new InstagramServices();
+        internal static int choicepath = 0;
         static async Task Main(string[] args)
         {
             Console.WriteLine("Inicio Sesion.");
-
             if (Services._InstaApi.IsUserAuthenticated)
             {
-                Console.WriteLine("Llamado a publicacion de comentario.");
-                await Services.PublishComment();
+                Console.WriteLine("Escoge una opcion Comentarios: 0 - Asignar likes a cuentas: 1.");
+                //choicepath = Convert.ToInt32(Console.ReadLine());
+
+                switch (choicepath)
+                {
+                    case 1:
+                        await Services.GetAccountPost();
+                        break;
+                    default: // Comentarios
+                        Console.WriteLine("Llamado a publicacion de comentario.");
+                        await Services.PublishComment();
+                        break;
+                }                
             }
             else
             {
@@ -39,8 +50,11 @@ namespace InstagramComments
                 Services = new InstagramServices();
                 await Main(args);
             }
+            Thread.Sleep(TimeSpan.FromMinutes(1));
+            await Services.LogooutAsync();
+            minutos = FakerData.Random.Number(5, 8);
             Console.WriteLine($"Espera de {minutos} horas para siguiente llamado.");
-            Thread.Sleep(TimeSpan.FromHours(minutos));
+            Thread.Sleep(TimeSpan.FromHours(minutos));            
             await Main(args);
 
         }
@@ -166,9 +180,9 @@ namespace InstagramComments
                     Console.WriteLine($"Cuenta de instagram a usar: {randomaccount}");
                     if (result.Succeeded || result.Value != null)
                     {
-                        var tre = result.Value.ToArray();
-                        Random.Shared.Shuffle(tre);
-                        Users = tre.Select(x => x.UserName).Take(10).ToList();
+                        var resultsarray = result.Value.ToArray();
+                        Random.Shared.Shuffle(resultsarray);
+                        Users = resultsarray.Where(x => !x.IsPrivate).Select(x => x.UserName).Take(10).ToList();
 
                         #region Old randomizer
                         //int skipusercount = result.Value.Count / 2;
@@ -185,7 +199,7 @@ namespace InstagramComments
 
                         //}
                         #endregion
-                        
+
                     }
                     else
                     {
@@ -201,8 +215,6 @@ namespace InstagramComments
                                 Console.WriteLine("Error en verificacion de codigo. Cerrando sistema.");
                                 throw new NotImplementedException();
                             }
-
-
                         }
                         else if (result.Info.ResponseType == ResponseType.LoginRequired)
                         {
@@ -284,7 +296,7 @@ namespace InstagramComments
                     }
                     else
                     {
-                        usernames.RemoveRange(0,1);
+                        usernames.RemoveRange(0, 1);
                         Users.RemoveRange(0, 1);
                     }
                     Thread.Sleep(5000);
@@ -297,7 +309,6 @@ namespace InstagramComments
             }
 
             Thread.Sleep(5000);
-            Program.minutos = 10;
         }
 
         private async Task<bool> ChallengeManage()
@@ -522,6 +533,12 @@ namespace InstagramComments
                 Console.WriteLine("Codigo aceptado.");
             }
             return result;
+        }
+
+        internal async Task GetAccountPost() {
+            var userMedias = await _InstaApi.UserProcessor
+    .GetUserMediaAsync("tu_proveedor_industrial", PaginationParameters.MaxPagesToLoad(1));
+
         }
     }
 }
