@@ -12,6 +12,7 @@ using InstagramComments.Settings;
 using InstagramApiSharp.Classes.Android.DeviceInfo;
 using System.Text;
 using InstagramApiSharp.Classes.SessionHandlers;
+using InstagramApiSharp.API.Processors;
 
 
 namespace InstagramComments.Services
@@ -136,7 +137,7 @@ namespace InstagramComments.Services
                     {
                         var tre = result.Value.ToArray();
                         Random.Shared.Shuffle(tre);
-                        Users = tre.Select(x => x.UserName).Take(10).ToList();
+                        Users = tre.Select(x => x.UserName).Take(4).ToList();
 
                         #region Old randomizer
                         //int skipusercount = result.Value.Count / 2;
@@ -503,6 +504,40 @@ namespace InstagramComments.Services
                 Console.WriteLine("Codigo aceptado.");
             }
             return result;
+        }
+
+        internal async Task GetAccountPost(PaginationParameters pagid = null)
+        {
+            int maxpageload = Program.FakerData.Random.Number(0, 20);
+            PaginationParameters paginator = pagid == null ? PaginationParameters.MaxPagesToLoad(maxpageload) : pagid;            
+
+            IResult<InstaMediaList> UserPosts = await _InstaApi.UserProcessor
+    .GetUserMediaAsync(model.LikeAccounts[0], paginator);
+
+            if (UserPosts.Succeeded && UserPosts.Value != null)
+            {
+                paginator.NextMaxId = UserPosts.Value.NextMaxId;
+                var posts = UserPosts.Value.Where(t => !t.HasLiked).Select(t => t.Pk);
+                if (posts.Any())
+                {
+                    int contador = 0;
+                    foreach (var item in posts)
+                    {
+                        var result = await _InstaApi.MediaProcessor.LikeMediaAsync(item);
+                        Console.WriteLine($"{contador} -  Resultado like: {JsonConvert.SerializeObject(result.Info)}");
+                        contador++;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("No se encontraron posts.");
+                }
+                await GetAccountPost(paginator);
+            }
+            else {
+                Console.WriteLine($"No trajo resultados. {UserPosts.Info.Message}");
+                await GetAccountPost(paginator);
+            }
         }
     }
 }
