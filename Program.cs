@@ -24,7 +24,7 @@ namespace InstagramComments
                 switch (choicepath)
                 {
                     case 1:
-                        await Services.GetAccountPost();
+                        await Services.LikePosts();
                         break;
                     default: // Comentarios
                         Console.WriteLine("Llamado a publicacion de comentario.");

@@ -13,6 +13,7 @@ using InstagramApiSharp.Classes.Android.DeviceInfo;
 using System.Text;
 using InstagramApiSharp.Classes.SessionHandlers;
 using InstagramApiSharp.API.Processors;
+using Bogus;
 
 
 namespace InstagramComments.Services
@@ -20,18 +21,22 @@ namespace InstagramComments.Services
     internal class InstagramServices
     {
         internal IInstaApi _InstaApi;
-        internal ISessionHandler _SessionHandler;
+        internal ISessionHandler _SessionHandler;        
         internal string nextpageinsta = "";
         internal string useraccount = "";
         internal int count = 0;
+
+        private Faker FakerData = new("es");
         private const string stateFile = "state.bin";
         private AndroidDevice device = new AndroidDevice();
         private string sessionstate = "";
-        List<string> Users = new();
+
+        internal List<string> Users = new();
 
         // Uso de Visual Stuido User Secrets.
-
         private InstagramSecrets? model = new();
+
+
         public InstagramServices()
         {
             GetDevice();
@@ -506,38 +511,62 @@ namespace InstagramComments.Services
             return result;
         }
 
-        internal async Task GetAccountPost(PaginationParameters pagid = null)
+        private async Task<IResult<InstaMediaList>> GetAccountPost(string account = null, PaginationParameters pagination = null)
         {
-            int maxpageload = Program.FakerData.Random.Number(0, 20);
-            PaginationParameters paginator = pagid == null ? PaginationParameters.MaxPagesToLoad(maxpageload) : pagid;            
+            int maxpageload = FakerData.Random.Number(0, 20);
+            PaginationParameters paginator = (pagination == null) ?
+                PaginationParameters.MaxPagesToLoad(maxpageload) :
+                pagination;
+            account = (account == null) ?
+                model.LikeAccounts[0] :
+                account;
+            
+            return await _InstaApi.UserProcessor.GetUserMediaAsync(account, paginator);
+        }        
 
-            IResult<InstaMediaList> UserPosts = await _InstaApi.UserProcessor
-    .GetUserMediaAsync(model.LikeAccounts[0], paginator);
+        internal async Task LikePosts(string account = null) {
+
+            IResult<InstaMediaList> UserPosts = account == null ?
+                    await GetAccountPost() :
+                    await GetAccountPost(account);
 
             if (UserPosts.Succeeded && UserPosts.Value != null)
-            {
-                paginator.NextMaxId = UserPosts.Value.NextMaxId;
+            {                
                 var posts = UserPosts.Value.Where(t => !t.HasLiked).Select(t => t.Pk);
                 if (posts.Any())
                 {
                     int contador = 0;
+                    int waitseconds = 0;
+                    IResult<bool> LikeMediaResult;
                     foreach (var item in posts)
                     {
-                        var result = await _InstaApi.MediaProcessor.LikeMediaAsync(item);
-                        Console.WriteLine($"{contador} -  Resultado like: {JsonConvert.SerializeObject(result.Info)}");
+                        waitseconds = FakerData.Random.Number(2,15);
+                        LikeMediaResult = await _InstaApi.MediaProcessor.LikeMediaAsync(item);
+                        if (LikeMediaResult.Info.ResponseType != ResponseType.OK)
+                        {
+                            Console.WriteLine($"{contador} - Error en like: {JsonConvert.SerializeObject(LikeMediaResult.Info)}");
+                        }
+                        else {
+                            Console.WriteLine($"{contador} -  Like aprobado: {LikeMediaResult.Value}");
+                        }
                         contador++;
+                        Thread.Sleep(TimeSpan.FromSeconds(waitseconds));
+                        
                     }
                 }
                 else
                 {
                     Console.WriteLine("No se encontraron posts.");
                 }
-                await GetAccountPost(paginator);
+                //await GetAccountPost(paginator);
             }
-            else {
+            else
+            {
                 Console.WriteLine($"No trajo resultados. {UserPosts.Info.Message}");
-                await GetAccountPost(paginator);
+                //await GetAccountPost(paginator);
             }
+
+            Console.WriteLine("Saliendo de llamado a likes...");
         }
     }
 }
