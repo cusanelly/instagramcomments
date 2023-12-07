@@ -40,7 +40,7 @@ namespace InstagramComments
             }
             Thread.Sleep(TimeSpan.FromMinutes(1));
             await Services.LogooutAsync();
-            minutos = FakerData.Random.Number(5, 8);
+            //minutos = FakerData.Random.Number(5, 8);
             Console.WriteLine($"Espera de {minutos} minutos para siguiente llamado.");
             Thread.Sleep(TimeSpan.FromMinutes(minutos));            
             await Main(args);

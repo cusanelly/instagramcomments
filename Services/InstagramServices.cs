@@ -223,9 +223,11 @@ namespace InstagramComments.Services
                 }
 
                 int contador = usernames.Count;
+                int waitseconds = 2;
                 Console.WriteLine($"Cantidad de usuarios: {contador}");
                 for (int i = 0; i < contador; i += 2)
                 {
+                    
                     comment = i == contador - 1 ? $"@{usernames[0]}, @{Program.FakerData.Internet.UserName()}" : $"@{usernames[0]}, @{usernames[1]}";
 
                     //Console.WriteLine($"{i} - Mensaje a enviar: {comment} - Resultado:");
@@ -261,7 +263,9 @@ namespace InstagramComments.Services
                         usernames.RemoveRange(0, 1);
                         Users.RemoveRange(0, 1);
                     }
-                    Thread.Sleep(5000);
+
+                    waitseconds = FakerData.Random.Number(2, 15);
+                    Thread.Sleep(TimeSpan.FromSeconds(waitseconds));
                 }
 
             }
@@ -532,12 +536,13 @@ namespace InstagramComments.Services
 
             if (UserPosts.Succeeded && UserPosts.Value != null)
             {                
-                var posts = UserPosts.Value.Where(t => !t.HasLiked).Select(t => t.Pk);
+                var posts = UserPosts.Value.Where(t => !t.HasLiked).Select(t => t.Pk).ToArray();
                 if (posts.Any())
                 {
                     int contador = 0;
                     int waitseconds = 0;
                     IResult<bool> LikeMediaResult;
+                    Console.WriteLine($"Cantidad de post para like: {posts.Count()}");
                     foreach (var item in posts)
                     {
                         waitseconds = FakerData.Random.Number(2,15);
@@ -545,6 +550,7 @@ namespace InstagramComments.Services
                         if (LikeMediaResult.Info.ResponseType != ResponseType.OK)
                         {
                             Console.WriteLine($"{contador} - Error en like: {JsonConvert.SerializeObject(LikeMediaResult.Info)}");
+                            Thread.Sleep(TimeSpan.FromSeconds(60));
                         }
                         else {
                             Console.WriteLine($"{contador} -  Like aprobado: {LikeMediaResult.Value}");
@@ -556,9 +562,9 @@ namespace InstagramComments.Services
                 }
                 else
                 {
-                    Console.WriteLine("No se encontraron posts.");
+                    Console.WriteLine("No se encontraron posts.");                    
                 }
-                //await GetAccountPost(paginator);
+
             }
             else
             {
