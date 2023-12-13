@@ -15,10 +15,9 @@ using InstagramApiSharp.Classes.SessionHandlers;
 using InstagramApiSharp.API.Processors;
 using Bogus;
 
+namespace InstagramComments.Services;
 
-namespace InstagramComments.Services
-{
-    internal class InstagramServices
+internal class InstagramServices
     {
         internal IInstaApi _InstaApi;
         internal ISessionHandler _SessionHandler;        
@@ -142,7 +141,7 @@ namespace InstagramComments.Services
                     {
                         var tre = result.Value.ToArray();
                         Random.Shared.Shuffle(tre);
-                        Users = tre.Select(x => x.UserName).Take(4).ToList();
+                        Users = tre.Select(x => x.UserName).Take(10).ToList();
 
                         #region Old randomizer
                         //int skipusercount = result.Value.Count / 2;
@@ -515,7 +514,7 @@ namespace InstagramComments.Services
             return result;
         }
 
-        private async Task<IResult<InstaMediaList>> GetAccountPost(string account = null, PaginationParameters pagination = null)
+        private async Task<IResult<InstaMediaList>> GetAccountPost(string? account = null, PaginationParameters? pagination = null)
         {
             int maxpageload = FakerData.Random.Number(0, 20);
             PaginationParameters paginator = (pagination == null) ?
@@ -528,7 +527,7 @@ namespace InstagramComments.Services
             return await _InstaApi.UserProcessor.GetUserMediaAsync(account, paginator);
         }        
 
-        internal async Task LikePosts(string account = null) {
+        internal async Task LikePosts(string? account = null) {
 
             IResult<InstaMediaList> UserPosts = account == null ?
                     await GetAccountPost() :
@@ -575,5 +574,5 @@ namespace InstagramComments.Services
             Console.WriteLine("Saliendo de llamado a likes...");
         }
     }
-}
+
 
