@@ -29,6 +29,7 @@ internal class InstagramServices
         private const string stateFile = "state.bin";
         private AndroidDevice device = new AndroidDevice();
         private string sessionstate = "";
+    private PaginationParameters paginator;
 
         internal List<string> Users = new();
 
@@ -516,8 +517,8 @@ internal class InstagramServices
 
         private async Task<IResult<InstaMediaList>> GetAccountPost(string? account = null, PaginationParameters? pagination = null)
         {
-            int maxpageload = FakerData.Random.Number(0, 20);
-            PaginationParameters paginator = (pagination == null) ?
+            int maxpageload = FakerData.Random.Number(1, 20);
+            paginator = (pagination == null) ?
                 PaginationParameters.MaxPagesToLoad(maxpageload) :
                 pagination;
             account = (account == null) ?
@@ -525,13 +526,13 @@ internal class InstagramServices
                 account;
             
             return await _InstaApi.UserProcessor.GetUserMediaAsync(account, paginator);
-        }        
+        }   
 
-        internal async Task LikePosts(string? account = null) {
+    internal async Task LikePosts(string? account = null) {
 
             IResult<InstaMediaList> UserPosts = account == null ?
                     await GetAccountPost() :
-                    await GetAccountPost(account);
+                    await GetAccountPost(account, paginator);
 
             if (UserPosts.Succeeded && UserPosts.Value != null)
             {                
@@ -561,14 +562,15 @@ internal class InstagramServices
                 }
                 else
                 {
-                    Console.WriteLine("No se encontraron posts.");                    
-                }
+                    Console.WriteLine("No se encontraron posts.");
+                    //await LikePosts(UserPosts.Value.FirstOrDefault().User.UserName);
+            }
 
             }
             else
             {
                 Console.WriteLine($"No trajo resultados. {UserPosts.Info.Message}");
-                //await GetAccountPost(paginator);
+                //await LikePosts(account);
             }
 
             Console.WriteLine("Saliendo de llamado a likes...");
